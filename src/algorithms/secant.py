@@ -15,6 +15,10 @@ def secant(f, x0, x1, tol=1e-5, max_iter=100):
     - ValueError: If a suitable root isn't found within max_iter iterations.
     """
 
+    # Explicit check for identical function values at initial guesses
+    if f(x0) == f(x1):
+        raise ValueError("Function values of the two guesses are the same, causing division by zero.")
+
     # Initialize variables
     n = 0
     x = x1

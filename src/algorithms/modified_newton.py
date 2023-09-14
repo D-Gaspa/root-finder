@@ -17,9 +17,12 @@ def modified_newton(f, df, ddf, x0, tol=1e-5, max_iter=100):
     - ValueError: If the denominator becomes zero or the maximum number of iterations is exceeded.
     """
 
+    # Initialize variables
     x = x0
 
+    # Loop until the root is found or the maximum number of iterations is reached
     for n in range(max_iter):
+        # Compute the function values
         fx = f(x)
         dfx = df(x)
         ddfx = ddf(x)

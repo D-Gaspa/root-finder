@@ -26,6 +26,10 @@ def newton(f, df, x0, tol=1e-5, max_iter=100):
 
     # Loop until the root is found or the maximum number of iterations is reached
     while abs(f(x)) > tol and n < max_iter:
+        # Check for zero in the denominator
+        if df(x) == 0:
+            raise ValueError("Derivative is zero. Cannot continue iteration.")
+
         # Update x using the Newton formula
         x = x - f(x) / df(x)
 
