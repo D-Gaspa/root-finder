@@ -1,6 +1,6 @@
 import math
 import pytest
-from test_utils import get_function
+from src.utils.function_evaluation import get_function
 from src.algorithms.bisection import bisection
 
 

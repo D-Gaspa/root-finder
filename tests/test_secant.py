@@ -1,7 +1,7 @@
 import math
 import pytest
 from src.algorithms.secant import secant
-from test_utils import get_function
+from src.utils.function_evaluation import get_function
 
 
 def test_secant_typical_case():
