@@ -1,7 +1,7 @@
 import math
 import pytest
 from src.algorithms.newton import newton
-from test_utils import get_function_and_derivatives
+from src.utils.function_evaluation import get_function_and_derivatives
 
 
 def test_newton_typical_case():

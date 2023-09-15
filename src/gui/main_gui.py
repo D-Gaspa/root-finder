@@ -3,18 +3,27 @@ import re
 import sys
 import sympy as sp
 from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
 import matplotlib.pyplot as plt
+from src.algorithms.bisection import bisection
+from src.algorithms.false_position import false_position
+from src.algorithms.modified_newton import modified_newton
+from src.algorithms.newton import newton
+from src.algorithms.secant import secant
+from src.utils.function_evaluation import get_function_and_derivatives
 
 
 def preprocess_input(expression):
     """
-    Preprocess the expression to handle implicit multiplications.
-    e.g. "2x" becomes "2*x".
+    Preprocess the expression to handle implicit multiplications and exponentiation.
+    e.g. "2x" becomes "2*x" and "x^2" becomes "x**2".
     """
     # Use a regex to find all instances of a number followed by a letter (e.g., "2x")
     expression = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', expression)
+
+    # Replace ^ with ** for exponentiation
+    expression = expression.replace('^', '**')
 
     return expression
 
@@ -22,12 +31,13 @@ def preprocess_input(expression):
 def convert_to_latex(expression):
     """
     Convert a plain text mathematical expression to LaTeX format using SymPy.
+    Returns a tuple containing the LaTeX expression and the Python-friendly expression.
     """
     # Preprocess the expression to handle implicit multiplications
-    expression = preprocess_input(expression)
+    python_expr = preprocess_input(expression)
 
     # Convert to SymPy expression
-    expr = sp.sympify(expression)
+    expr = sp.sympify(python_expr)
 
     # Convert to LaTeX
     latex_expr = sp.latex(expr, mul_symbol='dot')
@@ -35,7 +45,7 @@ def convert_to_latex(expression):
     # Post-process: Remove any unwanted 'cdot' to handle implicit multiplications
     latex_expr = latex_expr.replace('\\cdot', '')
 
-    return latex_expr
+    return latex_expr, python_expr
 
 
 def get_dark_palette():
@@ -115,6 +125,27 @@ def toggle_dark_mode():
         app.setPalette(app.style().standardPalette())
         app.setStyleSheet("")
 
+    # Update the LaTeX display
+    window.update_latex_display()
+
+
+def is_float(value, allow_empty=False):
+    """Check if a value is a float or optionally empty."""
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return allow_empty and value == ""
+
+
+def is_int(value, allow_empty=False):
+    """Check if a value is an integer or optionally empty."""
+    try:
+        int(value)
+        return True
+    except ValueError:
+        return allow_empty and value == ""
+
 
 class RootFinderApp(QMainWindow):
     def __init__(self):
@@ -165,10 +196,12 @@ class RootFinderApp(QMainWindow):
         self.fx_input = QLineEdit()
         self.fx_input.setPlaceholderText("Enter f(x) here...")
         self.fx_input.textChanged.connect(self.update_latex_display)
+        self.fx_input.textChanged.connect(self.validate_input)
         method_label = QLabel("Methods:")
         self.method_dropdown = QComboBox()
         self.method_dropdown.addItems(["Bisection", "False Position", "Modified Newton", "Newton", "Secant"])
         self.calculate_button = QPushButton("Calculate")
+        self.calculate_button.clicked.connect(self.on_calculate_clicked)
 
         input_layout.addWidget(self.fx_input)
         input_layout.addWidget(method_label)
@@ -176,10 +209,11 @@ class RootFinderApp(QMainWindow):
         input_layout.addWidget(self.calculate_button)
         main_layout.addLayout(input_layout)
 
-        # Distinguish the clear button using QPushButton
+        self.method_dropdown.setCurrentIndex(-1)  # Set no method selected
+
         clear_button = QPushButton("Clear")
         clear_button.setStyleSheet("background-color: red; color: white; border: none;")
-        clear_button.clicked.connect(self.fx_input.clear)
+        clear_button.clicked.connect(self.clear_inputs)
         main_layout.addWidget(clear_button)
 
         # LaTeX Display Area
@@ -196,10 +230,18 @@ class RootFinderApp(QMainWindow):
         main_layout.addWidget(self.latex_display_image_label)
         main_layout.addWidget(self.error_display_label)
 
+        # Additional Parameters Area
+        self.additional_params_layout = QVBoxLayout()
+        self.param_widgets = {}  # Store the parameter widgets for easy access
+        main_layout.addLayout(self.additional_params_layout)
+
         # Results Display (placeholder for now)
         self.results_display = QTextEdit()
         self.results_display.setPlaceholderText("Results will be displayed here...")
         main_layout.addWidget(self.results_display)
+
+        # Connect method dropdown change to adjust additional parameters
+        self.method_dropdown.currentTextChanged.connect(self.adjust_parameters)
 
         # Graph Visualization (placeholder for now)
         self.graph_display = QTextEdit()
@@ -213,6 +255,195 @@ class RootFinderApp(QMainWindow):
         splitter.addWidget(self.graph_display)
 
         self.setCentralWidget(splitter)
+
+        self.validate_input()
+
+    def clear_inputs(self):
+        """Clear all inputs and reset styles."""
+        self.fx_input.clear()
+        for widget in self.param_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.clear()
+                widget.setStyleSheet("")
+        self.results_display.clear()
+
+    def reset_results(self):
+        """Clear the results display."""
+        self.results_display.clear()
+
+    def validate_input(self):
+        """
+        Validates all input fields.
+        Returns True if all inputs are valid, else False.
+        """
+        valid = True
+
+        # Clear previous invalid input borders
+        for widget in self.param_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.setStyleSheet("")
+
+        # 1. Method selection validation
+        if self.method_dropdown.currentIndex() == -1:
+            valid = False
+
+        # 2. f(x) validation
+        if not self.fx_input.text().strip() or self.error_display_label.text():
+            valid = False
+
+        # 3. Additional parameter validation
+        method = self.method_dropdown.currentText()
+
+        # a, b validation for Bisection and False Position
+        if method in ["Bisection", "False Position"]:
+            a_val, b_val = self.param_widgets['a'].text(), self.param_widgets['b'].text()
+
+            # Reset styles first
+            self.param_widgets['a'].setStyleSheet("")
+            self.param_widgets['b'].setStyleSheet("")
+
+            if not is_float(a_val) or not a_val:
+                self.param_widgets['a'].setStyleSheet("border: 2px solid red;")
+                valid = False
+
+            if not is_float(b_val) or not b_val or (
+                    is_float(a_val) and is_float(b_val) and float(b_val) <= float(a_val)):
+                self.param_widgets['b'].setStyleSheet("border: 2px solid red;")
+                valid = False
+
+        # x0 validation for Newton and Modified Newton
+        if method in ["Newton", "Modified Newton"]:
+            x0_val = self.param_widgets['x0'].text()
+
+            # Reset style first
+            self.param_widgets['x0'].setStyleSheet("")
+
+            if not is_float(x0_val) or not x0_val:
+                self.param_widgets['x0'].setStyleSheet("border: 2px solid red;")
+                valid = False
+
+        # x0, x1 validation for Secant
+        if method == "Secant":
+            x0_val, x1_val = self.param_widgets['x0'].text(), self.param_widgets['x1'].text()
+
+            # Reset styles first
+            self.param_widgets['x0'].setStyleSheet("")
+            self.param_widgets['x1'].setStyleSheet("")
+
+            if not is_float(x0_val) or not x0_val:
+                self.param_widgets['x0'].setStyleSheet("border: 2px solid red;")
+                valid = False
+
+            if not is_float(x1_val) or not x1_val:
+                self.param_widgets['x1'].setStyleSheet("border: 2px solid red;")
+                valid = False
+
+        # tol validation (if provided)
+        if self.param_widgets.get('tol'):
+            tol_text = self.param_widgets['tol'].text().strip()
+            if tol_text and not is_float(tol_text):
+                self.param_widgets['tol'].setStyleSheet("border: 2px solid red;")
+                valid = False
+
+        # max_iter validation (if provided)
+        if self.param_widgets.get('max_iter'):
+            max_iter_text = self.param_widgets['max_iter'].text().strip()
+            if max_iter_text and not is_int(max_iter_text):
+                self.param_widgets['max_iter'].setStyleSheet("border: 2px solid red;")
+                valid = False
+
+        # 4. Update the button color based on validation
+        if valid:
+            self.calculate_button.setStyleSheet("background-color: #4CAF50;")  # Green color
+        else:
+            self.calculate_button.setStyleSheet("background-color: #444;")  # Default color
+
+        return valid
+
+    def adjust_parameters(self):
+        """
+        Adjust additional parameter input fields based on the selected method.
+        """
+        method = self.method_dropdown.currentText()
+
+        # Store the current values
+        current_values = {}
+        for key, widget in self.param_widgets.items():
+            if isinstance(widget, QLineEdit):
+                current_values[key] = widget.text()
+
+        # Clear previous widgets
+        for widget in self.param_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.textChanged.disconnect(self.validate_input)
+            widget.deleteLater()
+        self.param_widgets.clear()
+
+        # Return if no method is selected
+        if method == "":
+            return
+
+        # Depending on the method, create the required input fields
+        if method in ["Bisection", "False Position"]:
+            self.param_widgets['a_label'] = QLabel("a:")
+            self.param_widgets['a'] = QLineEdit(self)
+            self.param_widgets['a'].setPlaceholderText("Enter a here...")
+            self.param_widgets['a'].setText(current_values.get('a', ''))  # Restore value if it exists
+
+            self.param_widgets['b_label'] = QLabel("b:")
+            self.param_widgets['b'] = QLineEdit(self)
+            self.param_widgets['b'].setPlaceholderText("Enter b here...")
+            self.param_widgets['b'].setText(current_values.get('b', ''))  # Restore value if it exists
+
+            self.additional_params_layout.addWidget(self.param_widgets['a_label'])
+            self.additional_params_layout.addWidget(self.param_widgets['a'])
+            self.additional_params_layout.addWidget(self.param_widgets['b_label'])
+            self.additional_params_layout.addWidget(self.param_widgets['b'])
+
+        elif method in ["Modified Newton", "Newton"]:
+            self.param_widgets['x0_label'] = QLabel("x0 (Initial Guess):")
+            self.param_widgets['x0'] = QLineEdit(self)
+            self.param_widgets['x0'].setPlaceholderText("Enter x0 here...")
+            self.param_widgets['x0'].setText(current_values.get('x0', ''))  # Restore value if it exists
+
+            self.additional_params_layout.addWidget(self.param_widgets['x0_label'])
+            self.additional_params_layout.addWidget(self.param_widgets['x0'])
+
+        elif method == "Secant":
+            self.param_widgets['x0_label'] = QLabel("x0 (First Initial Guess):")
+            self.param_widgets['x0'] = QLineEdit(self)
+            self.param_widgets['x0'].setPlaceholderText("Enter x0 here...")
+
+            self.param_widgets['x1_label'] = QLabel("x1 (Second Initial Guess):")
+            self.param_widgets['x1'] = QLineEdit(self)
+            self.param_widgets['x1'].setPlaceholderText("Enter x1 here...")
+
+            self.additional_params_layout.addWidget(self.param_widgets['x0_label'])
+            self.additional_params_layout.addWidget(self.param_widgets['x0'])
+            self.additional_params_layout.addWidget(self.param_widgets['x1_label'])
+            self.additional_params_layout.addWidget(self.param_widgets['x1'])
+
+        # Add optional tolerance and max iterations for all methods
+        self.param_widgets['tol_label'] = QLabel("Tolerance:")
+        self.param_widgets['tol'] = QLineEdit(self)
+        self.param_widgets['tol'].setPlaceholderText("Default: 1e-5")
+
+        self.param_widgets['max_iter_label'] = QLabel("Max Iterations:")
+        self.param_widgets['max_iter'] = QLineEdit(self)
+        self.param_widgets['max_iter'].setPlaceholderText("Default: 100")
+
+        self.additional_params_layout.addWidget(self.param_widgets['tol_label'])
+        self.additional_params_layout.addWidget(self.param_widgets['tol'])
+        self.additional_params_layout.addWidget(self.param_widgets['max_iter_label'])
+        self.additional_params_layout.addWidget(self.param_widgets['max_iter'])
+
+        # Connect all textChanged signals to validate_input and reset_results
+        for widget in self.param_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.textChanged.connect(self.validate_input)
+                widget.textChanged.connect(self.reset_results)  # Reset results when any parameter changes
+
+        self.validate_input()  # Validate the input fields
 
     def insert_symbol(self, symbol):
         # Set focus to fx_input
@@ -248,7 +479,7 @@ class RootFinderApp(QMainWindow):
 
         # Convert to LaTeX
         try:
-            latex_expr = convert_to_latex(expression)
+            latex_expr, _ = convert_to_latex(expression)
         except Exception as e:
             self.error_display_label.setText(f"Error in conversion:\n{str(e)}")
             self.latex_display_image_label.clear()
@@ -277,10 +508,83 @@ class RootFinderApp(QMainWindow):
             self.error_display_label.setText(f"Your current input is invalid:\n{str(e)}")
             self.fx_input.setStyleSheet("border: 2px solid red;")  # Set input border to red
 
+    def on_calculate_clicked(self):
+        # Capture the user's function
+        _, python_expr = convert_to_latex(self.fx_input.text())
+
+        # Placeholder for results
+        root = None
+        iterations = None
+        error_msg = None
+
+        # Check the method selected
+        method = self.method_dropdown.currentText()
+
+        if method == "Bisection" or method == "False Position":
+            a = float(self.param_widgets['a'].text())
+            b = float(self.param_widgets['b'].text())
+            tol = float(self.param_widgets['tol'].text() or "1e-5")
+            max_iter = int(self.param_widgets['max_iter'].text() or "100")
+
+            if method == "Bisection":
+                try:
+                    # Execute the bisection method
+                    root, iterations = bisection(lambda x: eval(python_expr), a, b, tol, max_iter)
+                except ValueError as e:
+                    error_msg = str(e)
+            else:
+                try:
+                    # Execute the false position method
+                    root, iterations = false_position(lambda x: eval(python_expr), a, b, tol, max_iter)
+                except ValueError as e:
+                    error_msg = str(e)
+
+        elif method == "Newton" or method == "Modified Newton":
+            x0 = float(self.param_widgets['x0'].text())
+            tol = float(self.param_widgets['tol'].text() or "1e-5")
+            max_iter = int(self.param_widgets['max_iter'].text() or "100")
+
+            # Get the functions and derivatives
+            f, df, ddf = get_function_and_derivatives(python_expr)
+
+            if method == "Newton":
+                try:
+                    # Execute the Newton method
+                    root, iterations = newton(f, df, x0, tol, max_iter)
+                except ValueError as e:
+                    error_msg = str(e)
+            else:
+                try:
+                    # Execute the modified Newton method
+                    root, iterations = modified_newton(f, df, ddf, x0, tol, max_iter)
+                except ValueError as e:
+                    error_msg = str(e)
+
+        elif method == "Secant":
+            x0 = float(self.param_widgets['x0'].text())
+            x1 = float(self.param_widgets['x1'].text())
+            tol = float(self.param_widgets['tol'].text() or "1e-5")
+            max_iter = int(self.param_widgets['max_iter'].text() or "100")
+
+            try:
+                # Execute the Secant method
+                root, iterations = secant(lambda x: eval(python_expr), x0, x1, tol, max_iter)
+            except ValueError as e:
+                error_msg = str(e)
+
+        results_msg = f"Root: {root}\nIterations: {iterations}"
+
+        # Display results
+        if error_msg:
+            self.results_display.setText(f"Error: {error_msg}")
+        else:
+            self.results_display.setText(results_msg)
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = RootFinderApp()
-    toggle_dark_mode()
+    window.toggle_dark_mode = toggle_dark_mode
+    window.toggle_dark_mode()
     window.show()
     sys.exit(app.exec_())
