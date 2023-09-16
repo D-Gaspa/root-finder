@@ -1,17 +1,22 @@
 import io
 import re
 import sys
+import math
+import numpy as np
 import sympy as sp
+import matplotlib.pyplot as plt
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
-import matplotlib.pyplot as plt
 from src.algorithms.bisection import bisection
 from src.algorithms.false_position import false_position
 from src.algorithms.modified_newton import modified_newton
 from src.algorithms.newton import newton
 from src.algorithms.secant import secant
 from src.utils.function_evaluation import get_function_and_derivatives
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
 
 def preprocess_input(expression):
@@ -128,6 +133,12 @@ def toggle_dark_mode():
     # Update the LaTeX display
     window.update_latex_display()
 
+    # Update the results display
+    window.on_calculate_clicked()
+
+    # Update the graph display
+    window.graph_display.refresh_style()
+
 
 def is_float(value, allow_empty=False):
     """Check if a value is a float or optionally empty."""
@@ -145,6 +156,80 @@ def is_int(value, allow_empty=False):
         return True
     except ValueError:
         return allow_empty and value == ""
+
+
+class GraphCanvas(FigureCanvas):
+    def __init__(self, parent=None, width=5, height=4, dpi=100):
+        self.parent = parent
+        fig = Figure(figsize=(width, height), dpi=dpi)
+        self.axes = fig.add_subplot(111)
+
+        super(GraphCanvas, self).__init__(fig)
+
+        self.toolbar = self.get_toolbar()
+        if self.toolbar:
+            configure_subplots_action = next(
+                (action for action in self.toolbar.actions() if action.text() == "Customize"), None)
+            if configure_subplots_action:
+                self.toolbar.removeAction(configure_subplots_action)
+
+        # Set initial colors
+        self.set_colors_based_on_theme()
+
+    def get_toolbar(self):
+        """Get the navigation toolbar."""
+        for widget in self.parent.findChildren(QWidget):
+            if isinstance(widget, NavigationToolbar):
+                # Remove the "Configure subplots" button
+                for action in widget.actions():
+                    if action.iconText() == 'Subplots':
+                        widget.removeAction(action)
+                return widget
+        return None
+
+    def set_colors_based_on_theme(self):
+        """Adjust graph colors based on the application's theme."""
+        if app.palette().color(QPalette.Window) == QColor(53, 53, 53):  # Dark mode
+            self.figure.set_facecolor('black')
+            self.axes.set_facecolor('black')
+            self.axes.grid(color='gray')
+            self.axes.spines['bottom'].set_color('gray')
+            self.axes.spines['top'].set_color('gray')
+            self.axes.spines['left'].set_color('gray')
+            self.axes.spines['right'].set_color('gray')
+            self.axes.tick_params(axis='x', colors='gray')
+            self.axes.tick_params(axis='y', colors='gray')
+            self.axes.yaxis.label.set_color('gray')
+            self.axes.xaxis.label.set_color('gray')
+            self.axes.axhline(0, color='white', linewidth=1)  # Horizontal line (y-axis)
+            self.axes.axvline(0, color='white', linewidth=1)  # Vertical line (x-axis)
+
+        else:  # Light mode
+            self.figure.set_facecolor('white')
+            self.axes.set_facecolor('white')
+            self.axes.grid(color='lightgray')
+            self.axes.spines['bottom'].set_color('black')
+            self.axes.spines['top'].set_color('black')
+            self.axes.spines['left'].set_color('black')
+            self.axes.spines['right'].set_color('black')
+            self.axes.tick_params(axis='x', colors='black')
+            self.axes.tick_params(axis='y', colors='black')
+            self.axes.yaxis.label.set_color('black')
+            self.axes.xaxis.label.set_color('black')
+            self.setStyleSheet("")
+            self.axes.axhline(0, color='black', linewidth=1)  # Horizontal line (y-axis)
+            self.axes.axvline(0, color='black', linewidth=1)  # Vertical line (x-axis)
+
+    def refresh_style(self):
+        """Refresh the graph's appearance based on the application theme."""
+        self.set_colors_based_on_theme()
+        self.draw()
+
+    def clear_graph(self):
+        """Clear the graph and reset the appearance."""
+        self.axes.clear()
+        self.set_colors_based_on_theme()
+        self.draw()
 
 
 class RootFinderApp(QMainWindow):
@@ -243,9 +328,22 @@ class RootFinderApp(QMainWindow):
         # Connect method dropdown change to adjust additional parameters
         self.method_dropdown.currentTextChanged.connect(self.adjust_parameters)
 
-        # Graph Visualization (placeholder for now)
-        self.graph_display = QTextEdit()
-        self.graph_display.setPlaceholderText("Graph will be displayed here...")
+        # Graph Visualization
+        self.graph_display = GraphCanvas(self, width=5, height=4, dpi=100)
+        self.graph_toolbar = NavigationToolbar(self.graph_display, self)
+        main_layout.addWidget(self.graph_toolbar)  # Add the toolbar to the main layout
+        # Set the toolbar's background color of the icons to red
+        self.graph_toolbar.setStyleSheet("""
+                QToolButton {
+                    background-color: red;
+                    border: none;
+                }
+                QToolButton:hover {
+                    background-color: white;
+                }
+                QToolButton:pressed {
+                    background-color: white;
+            """)
 
         # Using QSplitter to allow resizing sections
         splitter = QSplitter(Qt.Horizontal)
@@ -265,7 +363,8 @@ class RootFinderApp(QMainWindow):
             if isinstance(widget, QLineEdit):
                 widget.clear()
                 widget.setStyleSheet("")
-        self.results_display.clear()
+        # Clear the graph
+        self.graph_display.clear_graph()
 
     def reset_results(self):
         """Clear the results display."""
@@ -283,12 +382,12 @@ class RootFinderApp(QMainWindow):
             if isinstance(widget, QLineEdit):
                 widget.setStyleSheet("")
 
-        # 1. Method selection validation
-        if self.method_dropdown.currentIndex() == -1:
+        # 1. f(x) validation
+        if not self.fx_input.text().strip() or self.error_display_label.text():
             valid = False
 
-        # 2. f(x) validation
-        if not self.fx_input.text().strip() or self.error_display_label.text():
+        # 2. Method selection validation
+        if self.method_dropdown.currentIndex() == -1:
             valid = False
 
         # 3. Additional parameter validation
@@ -460,6 +559,50 @@ class RootFinderApp(QMainWindow):
         self.fx_input.setText(new_text)
         self.fx_input.setCursorPosition(cursor_position + len(symbol) - cursor_offset)
 
+    def plot_function_graph(self, python_expr, latex_expr):
+        """
+        Plots the graph of the function given its python expression and latex expression.
+        """
+        try:
+            x_center = 0
+            x_vals = np.linspace(x_center - 10, x_center + 10, 400)
+            y_vals = []
+            for val in x_vals:
+                try:
+                    y = eval(python_expr, {
+                        "x": val,
+                        "sqrt": math.sqrt,
+                        "sin": math.sin,
+                        "cos": math.cos,
+                        "tan": math.tan,
+                        "log": math.log,
+                        "pi": math.pi,
+                        "e": math.e
+                    })
+                    y_vals.append(y)
+                except ValueError:
+                    y_vals.append(float('nan'))
+
+            # Clear previous plots
+            self.graph_display.axes.clear()
+
+            # Adjust graph background and grid based on dark mode
+            self.graph_display.set_colors_based_on_theme()
+
+            # Plot the function
+            self.graph_display.axes.plot(x_vals, y_vals, 'r-', label=f"${latex_expr}$", linewidth=2, zorder=1)
+
+            # Set labels and legend
+            self.graph_display.axes.set_xlabel('x')
+            self.graph_display.axes.set_ylabel('f(x)')
+            self.graph_display.axes.legend()
+
+            # Draw the updated graph
+            self.graph_display.draw()
+
+        except Exception as e:
+            self.graph_display.setText(f"Error while plotting: {str(e)}")
+
     def update_latex_display(self):
         """
         Update the LaTeX display label with the current input.
@@ -479,7 +622,7 @@ class RootFinderApp(QMainWindow):
 
         # Convert to LaTeX
         try:
-            latex_expr, _ = convert_to_latex(expression)
+            latex_expr, python_expr = convert_to_latex(expression)
         except Exception as e:
             self.error_display_label.setText(f"Error in conversion:\n{str(e)}")
             self.latex_display_image_label.clear()
@@ -503,22 +646,42 @@ class RootFinderApp(QMainWindow):
             self.error_display_label.clear()
             self.fx_input.setStyleSheet("")  # Reset input border
 
+            # Plot the graph
+            self.plot_function_graph(python_expr, latex_expr)
+
         except Exception as e:
             # If there's any error in rendering, display an error message directly without any LaTeX wrapping
             self.error_display_label.setText(f"Your current input is invalid:\n{str(e)}")
             self.fx_input.setStyleSheet("border: 2px solid red;")  # Set input border to red
 
     def on_calculate_clicked(self):
+        """
+        Calculate the root using the selected method.
+        """
+        # If the inputs aren't valid, just return without doing anything
+        if not self.validate_input():
+            return
+
+        # Clear previous results and graph
+        self.graph_display.clear_graph()
+        self.results_display.clear()
+
         # Capture the user's function
-        _, python_expr = convert_to_latex(self.fx_input.text())
+        latex_expr, python_expr = convert_to_latex(self.fx_input.text())
 
         # Placeholder for results
         root = None
         iterations = None
         error_msg = None
 
+        # Parameters to plot
+        plot_points = []
+
         # Check the method selected
         method = self.method_dropdown.currentText()
+
+        # Get the functions and derivatives
+        f, df, ddf = get_function_and_derivatives(python_expr)
 
         if method == "Bisection" or method == "False Position":
             a = float(self.param_widgets['a'].text())
@@ -526,26 +689,26 @@ class RootFinderApp(QMainWindow):
             tol = float(self.param_widgets['tol'].text() or "1e-5")
             max_iter = int(self.param_widgets['max_iter'].text() or "100")
 
+            plot_points.extend([a, b])
+
             if method == "Bisection":
                 try:
                     # Execute the bisection method
-                    root, iterations = bisection(lambda x: eval(python_expr), a, b, tol, max_iter)
+                    root, iterations = bisection(f, a, b, tol, max_iter)
                 except ValueError as e:
                     error_msg = str(e)
             else:
                 try:
                     # Execute the false position method
-                    root, iterations = false_position(lambda x: eval(python_expr), a, b, tol, max_iter)
+                    root, iterations = false_position(f, a, b, tol, max_iter)
                 except ValueError as e:
                     error_msg = str(e)
 
         elif method == "Newton" or method == "Modified Newton":
             x0 = float(self.param_widgets['x0'].text())
+            plot_points.append(x0)
             tol = float(self.param_widgets['tol'].text() or "1e-5")
             max_iter = int(self.param_widgets['max_iter'].text() or "100")
-
-            # Get the functions and derivatives
-            f, df, ddf = get_function_and_derivatives(python_expr)
 
             if method == "Newton":
                 try:
@@ -563,6 +726,7 @@ class RootFinderApp(QMainWindow):
         elif method == "Secant":
             x0 = float(self.param_widgets['x0'].text())
             x1 = float(self.param_widgets['x1'].text())
+            plot_points.extend([x0, x1])
             tol = float(self.param_widgets['tol'].text() or "1e-5")
             max_iter = int(self.param_widgets['max_iter'].text() or "100")
 
@@ -574,6 +738,45 @@ class RootFinderApp(QMainWindow):
 
         results_msg = f"Root: {root}\nIterations: {iterations}"
 
+        # Plot the graph
+        self.plot_function_graph(python_expr, latex_expr)
+
+        # Plotting parameters on the graph
+        for idx, point in enumerate(plot_points):
+            y_value = eval(python_expr, {
+                "x": point,
+                "sqrt": math.sqrt,
+                "sin": math.sin,
+                "cos": math.cos,
+                "tan": math.tan,
+                "log": math.log,
+                "pi": math.pi,
+                "e": math.e
+            })
+            # Limit to 2 decimal places
+            self.graph_display.axes.scatter(point, y_value, color='#FFA500', s=50, zorder=2,
+                                            label=f"Point {idx + 1}:({point:.2f}, {y_value:.2f})")
+
+        # If root is found, plot it
+        if root is not None:
+            self.graph_display.axes.scatter(root, 0, color='#1E90FF', s=50, marker='x', zorder=3, label=f"Root: {root}")
+
+        # Adjust the x-axis limits
+        if root is not None:
+            self.graph_display.axes.set_xlim(root - 2, root + 2)  # 2 units on either side of the root
+
+        # Set labels and legend
+        self.graph_display.axes.legend()
+
+        # Set the graph title
+        self.graph_display.axes.set_title(f"Graph of ${latex_expr}$")
+
+        # Expand the legend when the user hovers over it
+        self.graph_display.axes.legend().set_draggable(True)
+
+        # Refresh graph
+        self.graph_display.draw()
+
         # Display results
         if error_msg:
             self.results_display.setText(f"Error: {error_msg}")
@@ -584,7 +787,6 @@ class RootFinderApp(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = RootFinderApp()
-    window.toggle_dark_mode = toggle_dark_mode
-    window.toggle_dark_mode()
+    toggle_dark_mode()
     window.show()
     sys.exit(app.exec_())
