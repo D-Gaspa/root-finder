@@ -3,8 +3,8 @@
 `Root-Finder` is a Python application built using PyQt5 for finding the roots of mathematical functions using various methods, such as Bisection, False Position, Newton's, Modified Newton's, and Secant methods. It offers a user-friendly GUI, allowing users to visualize functions and results easily.
 
 <div style="display: flex; justify-content: center;">
-    <img src="assets/Root-finder1.png" width="600" style="margin-right: 20px;" alt="Main interface">
-    <img src="assets/Root-finder2.png" width="600" alt="Main interface (Dark Mode)">
+    <img src="assets/Root-finder1.png" width="500" style="margin-right: 20px;" alt="Main interface">
+    <img src="assets/Root-finder2.png" width="500" alt="Main interface (Dark Mode)">
 </div>
 
 ## Features
