@@ -341,8 +341,6 @@ class RootFinderApp(QMainWindow):
                 QToolButton:hover {
                     background-color: white;
                 }
-                QToolButton:pressed {
-                    background-color: white;
             """)
 
         # Using QSplitter to allow resizing sections
@@ -732,7 +730,7 @@ class RootFinderApp(QMainWindow):
 
             try:
                 # Execute the Secant method
-                root, iterations = secant(lambda x: eval(python_expr), x0, x1, tol, max_iter)
+                root, iterations = secant(f, x0, x1, tol, max_iter)
             except ValueError as e:
                 error_msg = str(e)
 
@@ -765,13 +763,17 @@ class RootFinderApp(QMainWindow):
         if root is not None:
             self.graph_display.axes.set_xlim(root - 2, root + 2)  # 2 units on either side of the root
 
-        # Set labels and legend
-        self.graph_display.axes.legend()
+        # Set the graph title based on dark mode
 
-        # Set the graph title
-        self.graph_display.axes.set_title(f"Graph of ${latex_expr}$")
+        if app.palette().color(QPalette.Window) == QColor(53, 53, 53):  # Dark mode
+            self.graph_display.axes.set_title(f"Graph of ${latex_expr}$", color='white')
+        else:  # Light mode
+            self.graph_display.axes.set_title(f"Graph of ${latex_expr}$")
 
-        # Expand the legend when the user hovers over it
+        # Set labels and legend to the top left
+        self.graph_display.axes.legend(loc='upper left')
+
+        # Allow legend to be draggable
         self.graph_display.axes.legend().set_draggable(True)
 
         # Refresh graph
