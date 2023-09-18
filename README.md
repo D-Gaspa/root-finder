@@ -28,9 +28,10 @@ cd Root-Finder
 pip install -r requirements.txt
 ```
 
-3. Run the application:
+3. Navigate to the src/gui directory and run the application:
 ```bash
-python main.py
+cd src/gui
+python main_gui.py
 ```
 
 ## Usage
