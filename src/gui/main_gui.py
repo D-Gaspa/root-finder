@@ -1,28 +1,30 @@
 import io
+import math
 import re
 import sys
-import math
+
+import matplotlib.pyplot as plt
 import numpy as np
 import sympy as sp
-import matplotlib.pyplot as plt
-from PyQt5.QtGui import *
 from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.figure import Figure
+
 from src.algorithms.bisection import bisection
 from src.algorithms.false_position import false_position
 from src.algorithms.modified_newton import modified_newton
 from src.algorithms.newton import newton
 from src.algorithms.secant import secant
 from src.utils.function_evaluation import get_function_and_derivatives
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
 
 def preprocess_input(expression):
     """
     Preprocess the expression to handle implicit multiplications and exponentiation.
-    e.g. "2x" becomes "2*x" and "x^2" becomes "x**2".
+    For example, "2x" becomes "2*x" and "x^2" becomes "x**2".
     """
     # Use a regex to find all instances of a number followed by a letter (e.g., "2x")
     expression = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', expression)
@@ -133,7 +135,7 @@ def toggle_dark_mode():
     # Update the LaTeX display
     window.update_latex_display()
 
-    # Update the results display
+    # Update the result display
     window.on_calculate_clicked()
 
     # Update the graph display
@@ -201,8 +203,8 @@ class GraphCanvas(FigureCanvas):
             self.axes.tick_params(axis='y', colors='gray')
             self.axes.yaxis.label.set_color('gray')
             self.axes.xaxis.label.set_color('gray')
-            self.axes.axhline(0, color='white', linewidth=1)  # Horizontal line (y-axis)
-            self.axes.axvline(0, color='white', linewidth=1)  # Vertical line (x-axis)
+            self.axes.axhline(color='white', linewidth=1)  # Horizontal line (y-axis)
+            self.axes.axvline(color='white', linewidth=1)  # Vertical line (x-axis)
 
         else:  # Light mode
             self.figure.set_facecolor('white')
@@ -217,8 +219,8 @@ class GraphCanvas(FigureCanvas):
             self.axes.yaxis.label.set_color('black')
             self.axes.xaxis.label.set_color('black')
             self.setStyleSheet("")
-            self.axes.axhline(0, color='black', linewidth=1)  # Horizontal line (y-axis)
-            self.axes.axvline(0, color='black', linewidth=1)  # Vertical line (x-axis)
+            self.axes.axhline(color='black', linewidth=1)  # Horizontal line (y-axis)
+            self.axes.axvline(color='black', linewidth=1)  # Vertical line (x-axis)
 
     def refresh_style(self):
         """Refresh the graph's appearance based on the application theme."""
@@ -329,7 +331,7 @@ class RootFinderApp(QMainWindow):
         self.method_dropdown.currentTextChanged.connect(self.adjust_parameters)
 
         # Graph Visualization
-        self.graph_display = GraphCanvas(self, width=5, height=4, dpi=100)
+        self.graph_display = GraphCanvas(self)
         self.graph_toolbar = NavigationToolbar(self.graph_display, self)
         main_layout.addWidget(self.graph_toolbar)  # Add the toolbar to the main layout
         # Set the toolbar's background color of the icons to red
@@ -365,7 +367,7 @@ class RootFinderApp(QMainWindow):
         self.graph_display.clear_graph()
 
     def reset_results(self):
-        """Clear the results display."""
+        """Clear the result display."""
         self.results_display.clear()
 
     def validate_input(self):
@@ -391,7 +393,7 @@ class RootFinderApp(QMainWindow):
         # 3. Additional parameter validation
         method = self.method_dropdown.currentText()
 
-        # a, b validation for Bisection and False Position
+        # 'a' and 'b' validation for Bisection and False Position
         if method in ["Bisection", "False Position"]:
             a_val, b_val = self.param_widgets['a'].text(), self.param_widgets['b'].text()
 
@@ -611,7 +613,7 @@ class RootFinderApp(QMainWindow):
         # Clear previous display
         self.latex_display_image_label.clear()
 
-        # Check if input area is empty
+        # Check if the input area is empty
         if not expression.strip():
             self.latex_display_image_label.clear()
             self.error_display_label.clear()
