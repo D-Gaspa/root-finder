@@ -32,7 +32,7 @@ def modified_newton(f, df, ddf, x0, tol=1e-5, max_iter=100):
             return x, n
 
         # Check for zero in the denominator
-        denominator = dfx**2 - fx * ddfx
+        denominator = dfx ** 2 - fx * ddfx
         if denominator == 0:
             raise ValueError("Denominator became zero. Adjust the initial guess or use another method.")
 

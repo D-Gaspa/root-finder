@@ -1,7 +1,9 @@
 import math
+
 import pytest
-from src.utils.function_evaluation import get_function
+
 from src.algorithms.false_position import false_position
+from src.utils.function_evaluation import get_function
 
 
 def test_false_position_typical_case():

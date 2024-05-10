@@ -1,13 +1,15 @@
 import math
+
 import pytest
-from src.utils.function_evaluation import get_function
+
 from src.algorithms.bisection import bisection
+from src.utils.function_evaluation import get_function
 
 
 def test_bisection_typical_case():
     f = get_function("x**2 - 3")
     root, iterations = bisection(f, 1, 2)
-    assert math.isclose(root, (3**0.5), abs_tol=1e-5)
+    assert math.isclose(root, (3 ** 0.5), abs_tol=1e-5)
 
 
 def test_bisection_root_at_boundary():

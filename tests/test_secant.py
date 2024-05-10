@@ -1,5 +1,7 @@
 import math
+
 import pytest
+
 from src.algorithms.secant import secant
 from src.utils.function_evaluation import get_function
 

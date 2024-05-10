@@ -12,7 +12,7 @@ def false_position(f, a, b, tol=1e-5, max_iter=100):
     - n (int): The number of iterations required to reach the root.
 
     Raises:
-    - ValueError: If the root is not in the interval [a, b] or the maximum number of iterations is exceeded.
+    - ValueError: If the root is not in the interval [a, b], or the maximum number of iterations is exceeded.
     """
 
     # Compute the function values

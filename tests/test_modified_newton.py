@@ -1,5 +1,7 @@
 import math
+
 import pytest
+
 from src.algorithms.modified_newton import modified_newton
 from src.utils.function_evaluation import get_function_and_derivatives
 
